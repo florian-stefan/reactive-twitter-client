@@ -53,7 +53,7 @@ public class TwitterClient {
       .setRequestTimeout(Integer.MAX_VALUE)
       .build();
 
-    return Observable.create(emitter -> {
+    Observable<byte[]> observable = Observable.create(emitter -> {
       DefaultAsyncHttpClient asyncHttpClient = new DefaultAsyncHttpClient();
 
       LOGGER.info("Starting to request tweets ...");
@@ -104,6 +104,8 @@ public class TwitterClient {
 
       emitter.setSubscription(Subscriptions.create(asyncHttpClient::close));
     }, BackpressureMode.BUFFER);
+
+    return observable.serialize();
   }
 
   public static class Builder {
