@@ -5,16 +5,17 @@ import org.junit.Before;
 import org.junit.Test;
 import rx.Observable;
 import rx.observers.TestSubscriber;
+import rx.schedulers.Schedulers;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static java.lang.String.format;
 import static java.util.Arrays.stream;
 import static java.util.stream.Collectors.joining;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 public class TwitterStreamerTest {
 
@@ -77,6 +78,26 @@ public class TwitterStreamerTest {
     subscriber.assertError(IOException.class);
   }
 
+  @Test
+  public void shouldShareStreamBetweenSubscribers() {
+    TickMapper tickMapper = spy(new TickMapper());
+    when(twitterClientMock.stream()).thenReturn(Observable
+      .interval(10, TimeUnit.MILLISECONDS, Schedulers.newThread())
+      .map(tickMapper::newTweet)
+      .take(3)
+    );
+
+    Observable<Tweet> tweets = twitterStreamer.tweets();
+    TestSubscriber<Tweet> firstSubscriber = new TestSubscriber<>();
+    tweets.subscribe(firstSubscriber);
+    TestSubscriber<Tweet> secondSubscriber = new TestSubscriber<>();
+    tweets.subscribe(secondSubscriber);
+
+    firstSubscriber.awaitTerminalEvent();
+    secondSubscriber.awaitTerminalEvent();
+    verify(tickMapper, times(3)).newTweet(anyLong());
+  }
+
   private String[] createTweetsAsChunks(String... texts) {
     AtomicLong counter = new AtomicLong(1);
 
@@ -84,6 +105,14 @@ public class TwitterStreamerTest {
       .map(text -> format("{\"id\":%d,#\"text\":\"%s\",#\"favorited\":true}", counter.getAndIncrement(), text))
       .collect(joining("\r\n"))
       .split("#");
+  }
+
+  static class TickMapper {
+
+    byte[] newTweet(long tick) {
+      return format("{\"id\":%d,\"text\":\"Example\",\"favorited\":true}\r\n", 1L).getBytes(StandardCharsets.UTF_8);
+    }
+
   }
 
 }

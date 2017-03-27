@@ -27,7 +27,8 @@ public class TwitterStreamer {
       .flatMap(this::splitChunks)
       .publish(this::collectFrames)
       .filter(StringUtils::isNotEmpty)
-      .flatMap(this::parseTweet);
+      .flatMap(this::parseTweet)
+      .share();
   }
 
   private String decodeBytes(byte[] bytes) {
