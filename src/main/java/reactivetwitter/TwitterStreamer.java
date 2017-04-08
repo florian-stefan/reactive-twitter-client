@@ -2,10 +2,12 @@ package reactivetwitter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.lang3.StringUtils;
-import rx.Observable;
+import reactor.core.publisher.Flux;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+
+import static org.apache.commons.lang3.StringUtils.EMPTY;
 
 public class TwitterStreamer {
 
@@ -20,7 +22,7 @@ public class TwitterStreamer {
     this.objectMapper = objectMapper;
   }
 
-  public Observable<Tweet> tweets() {
+  public Flux<Tweet> tweets() {
     return twitterClient
       .stream()
       .map(this::decodeBytes)
@@ -35,34 +37,34 @@ public class TwitterStreamer {
     return new String(bytes, StandardCharsets.UTF_8);
   }
 
-  private Observable<String> splitChunks(String chunksAsString) {
+  private Flux<String> splitChunks(String chunksAsString) {
     String[] chunks = StringUtils.split(chunksAsString, SEPARATOR);
     boolean endsWithSeparator = chunksAsString.endsWith(SEPARATOR);
 
-    return Observable
-      .from(chunks)
-      .zipWith(Observable.range(1, chunks.length), (chunk, index) -> {
+    return Flux
+      .fromArray(chunks)
+      .zipWith(Flux.range(1, chunks.length), (chunk, index) -> {
         if (index < chunks.length || endsWithSeparator) {
-          return Observable.just(chunk, SEPARATOR);
+          return Flux.just(chunk, SEPARATOR);
         } else {
-          return Observable.just(chunk);
+          return Flux.just(chunk);
         }
       })
       .flatMap(chunk -> chunk);
   }
 
-  private Observable<String> collectFrames(Observable<String> chunks) {
+  private Flux<String> collectFrames(Flux<String> chunks) {
     return chunks
       .filter(chunk -> !SEPARATOR.equals(chunk))
-      .buffer(() -> chunks.filter(SEPARATOR::equals))
-      .map(bufferedChunks -> StringUtils.join(bufferedChunks, ""));
+      .buffer(chunks.filter(SEPARATOR::equals))
+      .map(bufferedChunks -> StringUtils.join(bufferedChunks, EMPTY));
   }
 
-  private Observable<Tweet> parseTweet(String tweetAsString) {
+  private Flux<Tweet> parseTweet(String tweetAsString) {
     try {
-      return Observable.just(objectMapper.readValue(tweetAsString, Tweet.class));
+      return Flux.just(objectMapper.readValue(tweetAsString, Tweet.class));
     } catch (IOException e) {
-      return Observable.error(e);
+      return Flux.error(e);
     }
   }
 

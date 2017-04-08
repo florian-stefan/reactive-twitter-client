@@ -7,9 +7,7 @@ import org.asynchttpclient.oauth.OAuthSignatureCalculator;
 import org.asynchttpclient.oauth.RequestToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import rx.Emitter.BackpressureMode;
-import rx.Observable;
-import rx.subscriptions.Subscriptions;
+import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -39,7 +37,7 @@ public class TwitterClient {
     this.track = track;
   }
 
-  public Observable<byte[]> stream() {
+  public Flux<byte[]> stream() {
     String trackAsString = track.stream().collect(joining(","));
     String url = format("https://stream.twitter.com/1.1/statuses/filter.json?track=%s", trackAsString);
 
@@ -53,7 +51,7 @@ public class TwitterClient {
       .setRequestTimeout(Integer.MAX_VALUE)
       .build();
 
-    Observable<byte[]> observable = Observable.create(emitter -> {
+    return Flux.create(emitter -> {
       DefaultAsyncHttpClient asyncHttpClient = new DefaultAsyncHttpClient();
 
       LOGGER.info("Starting to request tweets ...");
@@ -62,12 +60,12 @@ public class TwitterClient {
 
         @Override
         public void onThrowable(Throwable throwable) {
-          emitter.onError(throwable);
+          emitter.error(throwable);
         }
 
         @Override
         public State onBodyPartReceived(HttpResponseBodyPart httpResponseBodyPart) throws Exception {
-          emitter.onNext(httpResponseBodyPart.getBodyPartBytes());
+          emitter.next(httpResponseBodyPart.getBodyPartBytes());
 
           return httpResponseBodyPart.isLast() ? State.ABORT : State.CONTINUE;
         }
@@ -80,7 +78,7 @@ public class TwitterClient {
           if (httpResponseStatus.getStatusCode() == 200) {
             return State.CONTINUE;
           } else {
-            emitter.onError(new TwitterStatusCodeException(httpResponseStatus.getStatusCode()));
+            emitter.error(new TwitterStatusCodeException(httpResponseStatus.getStatusCode()));
 
             return State.ABORT;
           }
@@ -96,16 +94,14 @@ public class TwitterClient {
 
         @Override
         public Response onCompleted() throws Exception {
-          emitter.onCompleted();
+          emitter.complete();
 
           return builder.build();
         }
       });
 
-      emitter.setSubscription(Subscriptions.create(asyncHttpClient::close));
-    }, BackpressureMode.BUFFER);
-
-    return observable.serialize();
+      emitter.onCancel(asyncHttpClient::close);
+    });
   }
 
   public static class Builder {
