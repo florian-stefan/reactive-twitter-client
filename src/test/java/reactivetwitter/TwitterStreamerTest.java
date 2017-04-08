@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import static java.lang.String.format;
 import static java.util.Arrays.stream;
 import static java.util.stream.Collectors.joining;
+import static org.apache.commons.lang3.StringUtils.EMPTY;
 import static org.mockito.Mockito.*;
 
 public class TwitterStreamerTest {
@@ -32,10 +33,8 @@ public class TwitterStreamerTest {
 
   @Test
   public void shouldStreamSingleTweet() {
-    when(twitterClientMock.stream()).thenReturn(Flux
-      .just(format("{\"id\":%d,\"text\":\"Example\",\"favorited\":true}\r\n", 1L))
-      .map(tweet -> tweet.getBytes(StandardCharsets.UTF_8))
-    );
+    Flux<byte[]> rawTweets = createRawTweets(format("{\"id\":%d,\"text\":\"Example\",\"favorited\":true}\r\n", 1L));
+    when(twitterClientMock.stream()).thenReturn(rawTweets);
 
     Flux<Tweet> tweets = twitterStreamer.tweets();
 
@@ -47,10 +46,8 @@ public class TwitterStreamerTest {
 
   @Test
   public void shouldStreamChunkedTweets() {
-    when(twitterClientMock.stream()).thenReturn(Flux
-      .fromArray(createTweetsAsChunks("Example A", "Example B", "Example C"))
-      .map(chunk -> chunk.getBytes(StandardCharsets.UTF_8))
-    );
+    Flux<byte[]> rawTweetsAsChunks = createRawTweetsAsChunks("Example A", "Example B", "Example C");
+    when(twitterClientMock.stream()).thenReturn(rawTweetsAsChunks);
 
     Flux<Tweet> tweets = twitterStreamer.tweets();
 
@@ -63,11 +60,38 @@ public class TwitterStreamerTest {
   }
 
   @Test
-  public void shouldPropagateError() {
-    when(twitterClientMock.stream()).thenReturn(Flux
-      .just(format("{\"id\":%d,\"text\":Example,\"favorited\":true}\r\n", 1L))
-      .map(tweet -> tweet.getBytes(StandardCharsets.UTF_8))
+  public void shouldHandleEmptyResponses() {
+    Flux<byte[]> rawTweets = createRawTweets(format("{\"id\":%d,\"text\":\"Example\"}\r\n", 1L), EMPTY);
+    when(twitterClientMock.stream()).thenReturn(rawTweets);
+
+    Flux<Tweet> tweets = twitterStreamer.tweets();
+
+    StepVerifier.create(tweets)
+      .expectNext(new Tweet("1", "Example"))
+      .expectComplete()
+      .verify();
+  }
+
+  @Test
+  public void shouldFilterMessagesWithoutText() {
+    Flux<byte[]> rawTweets = createRawTweets(
+      format("{\"id\":%d,\"text\":\"Example\"}\r\n", 1L),
+      format("{\"id\":%d,\"test\":\"Example\"}\r\n", 2L)
     );
+    when(twitterClientMock.stream()).thenReturn(rawTweets);
+
+    Flux<Tweet> tweets = twitterStreamer.tweets();
+
+    StepVerifier.create(tweets)
+      .expectNext(new Tweet("1", "Example"))
+      .expectComplete()
+      .verify();
+  }
+
+  @Test
+  public void shouldPropagateError() {
+    Flux<byte[]> rawTweets = createRawTweets(format("{\"id\":%d,\"text\":Example,\"favorited\":true}\r\n", 1L));
+    when(twitterClientMock.stream()).thenReturn(rawTweets);
 
     Flux<Tweet> tweets = twitterStreamer.tweets();
 
@@ -80,11 +104,11 @@ public class TwitterStreamerTest {
   public void shouldShareStreamBetweenSubscribers() throws InterruptedException {
     CountDownLatch countDownLatch = new CountDownLatch(6);
     TickMapper tickMapper = spy(new TickMapper());
-    when(twitterClientMock.stream()).thenReturn(Flux
+    Flux<byte[]> rawTweets = Flux
       .interval(Duration.ofMillis(10))
       .map(tickMapper::newTweet)
-      .take(3)
-    );
+      .take(3);
+    when(twitterClientMock.stream()).thenReturn(rawTweets);
 
     Flux<Tweet> tweets = twitterStreamer.tweets();
     tweets.subscribe(tweet -> countDownLatch.countDown());
@@ -94,13 +118,21 @@ public class TwitterStreamerTest {
     verify(tickMapper, times(3)).newTweet(anyLong());
   }
 
-  private String[] createTweetsAsChunks(String... texts) {
+  private Flux<byte[]> createRawTweets(String... texts) {
+    return Flux
+      .fromArray(texts)
+      .map(tweet -> tweet.getBytes(StandardCharsets.UTF_8));
+  }
+
+  private Flux<byte[]> createRawTweetsAsChunks(String... texts) {
     AtomicLong counter = new AtomicLong(1);
 
-    return stream(texts)
+    String[] textsAsChunks = stream(texts)
       .map(text -> format("{\"id\":%d,#\"text\":\"%s\",#\"favorited\":true}", counter.getAndIncrement(), text))
       .collect(joining("\r\n"))
       .split("#");
+
+    return createRawTweets(textsAsChunks);
   }
 
   static class TickMapper {

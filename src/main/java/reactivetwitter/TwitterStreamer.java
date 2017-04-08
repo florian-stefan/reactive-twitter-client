@@ -3,6 +3,7 @@ package reactivetwitter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.lang3.StringUtils;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -28,8 +29,8 @@ public class TwitterStreamer {
       .map(this::decodeBytes)
       .flatMap(this::splitChunks)
       .publish(this::collectFrames)
-      .filter(StringUtils::isNotEmpty)
       .flatMap(this::parseTweet)
+      .filter(Tweet::hasText)
       .share();
   }
 
@@ -60,11 +61,11 @@ public class TwitterStreamer {
       .map(bufferedChunks -> StringUtils.join(bufferedChunks, EMPTY));
   }
 
-  private Flux<Tweet> parseTweet(String tweetAsString) {
+  private Mono<Tweet> parseTweet(String tweetAsString) {
     try {
-      return Flux.just(objectMapper.readValue(tweetAsString, Tweet.class));
+      return Mono.just(objectMapper.readValue(tweetAsString, Tweet.class));
     } catch (IOException e) {
-      return Flux.error(e);
+      return Mono.error(e);
     }
   }
 

@@ -3,6 +3,7 @@ package reactivetwitter;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.builder.EqualsBuilder;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.apache.commons.lang3.builder.ToStringBuilder;
@@ -18,6 +19,10 @@ public class Tweet {
                @JsonProperty("text") String text) {
     this.id = id;
     this.text = text;
+  }
+
+  public boolean hasText() {
+    return StringUtils.isNotBlank(text);
   }
 
   @Override
