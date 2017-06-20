@@ -1,7 +1,8 @@
 package reactivetwitter;
 
-import org.asynchttpclient.*;
-import org.asynchttpclient.Response.ResponseBuilder;
+import org.asynchttpclient.DefaultAsyncHttpClient;
+import org.asynchttpclient.Request;
+import org.asynchttpclient.RequestBuilder;
 import org.asynchttpclient.oauth.ConsumerKey;
 import org.asynchttpclient.oauth.OAuthSignatureCalculator;
 import org.asynchttpclient.oauth.RequestToken;
@@ -55,50 +56,7 @@ public class TwitterClient {
       DefaultAsyncHttpClient asyncHttpClient = new DefaultAsyncHttpClient();
 
       LOGGER.info("Starting to request tweets ...");
-      asyncHttpClient.executeRequest(request, new AsyncHandler<Response>() {
-        private final ResponseBuilder builder = new ResponseBuilder();
-
-        @Override
-        public void onThrowable(Throwable throwable) {
-          emitter.error(throwable);
-        }
-
-        @Override
-        public State onBodyPartReceived(HttpResponseBodyPart httpResponseBodyPart) throws Exception {
-          emitter.next(httpResponseBodyPart.getBodyPartBytes());
-
-          return httpResponseBodyPart.isLast() ? State.ABORT : State.CONTINUE;
-        }
-
-        @Override
-        public State onStatusReceived(HttpResponseStatus httpResponseStatus) throws Exception {
-          LOGGER.info("Received HTTP response status: {}", httpResponseStatus.getStatusCode());
-          builder.accumulate(httpResponseStatus);
-
-          if (httpResponseStatus.getStatusCode() == 200) {
-            return State.CONTINUE;
-          } else {
-            emitter.error(new TwitterStatusCodeException(httpResponseStatus.getStatusCode()));
-
-            return State.ABORT;
-          }
-        }
-
-        @Override
-        public State onHeadersReceived(HttpResponseHeaders httpResponseHeaders) throws Exception {
-          LOGGER.info("Received HTTP response headers: {}", httpResponseHeaders.getHeaders());
-          builder.accumulate(httpResponseHeaders);
-
-          return State.CONTINUE;
-        }
-
-        @Override
-        public Response onCompleted() throws Exception {
-          emitter.complete();
-
-          return builder.build();
-        }
-      });
+      asyncHttpClient.executeRequest(request, new FluxSinkAdapter(emitter));
 
       emitter.onCancel(asyncHttpClient::close);
     });
